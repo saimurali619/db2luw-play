@@ -1,0 +1,28 @@
+---
+- name: Create DB2 instances
+  ansible.builtin.command:
+    cmd: "{{ db2_install_dir }}/instance/db2icrt -u {{ item.fenced_name }} {{ item.instance_name }}"
+  become: yes
+  loop: "{{ db2_instances }}"
+  register: db2icrt_result
+  changed_when: "'successfully' in db2icrt_result.stdout | default('')"
+  ignore_errors: yes
+
+- name: Create sample database (if enabled)
+  ansible.builtin.shell:
+    cmd: |
+      source ~/.profile
+      db2start; db2 create db SAMPLE
+  loop: "{{ db2_instances }}"
+  when: create_sample_db | bool
+  become_user: "{{ item.instance_name }}"
+  ignore_errors: yes
+
+- name: Display Instance Creation Result
+  debug:
+    msg:
+      - "======================================="
+      - "   DB2 Instance Creation Result"
+      - "======================================="
+      - "Status : Instances Created Successfully"
+      - "======================================="

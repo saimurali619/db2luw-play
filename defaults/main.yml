@@ -1,0 +1,27 @@
+---
+# Default values - can be overridden in group_vars/all.yml
+db2_version: "11.5.9"
+db2_edition: "SERVER"
+db2_install_base: "/opt/ibm/db2"
+db2_install_dir: "{{ db2_install_base }}/V{{ db2_version }}"
+
+db2_installer_filename: "v11.5.9_linuxx64_server_dec.tar.gz"
+
+db2_lic_agreement: "ACCEPT"
+db2_install_type: "TYPICAL"
+create_sample_db: true
+
+# DB2 OS Packages
+db2_packages:
+  - pam
+  - pam-devel.i686
+  - libaio
+  - libstdc++
+  - libstdc++-devel.i686
+  - libstdc++-devel
+  - ksh
+  - unzip
+  - redhat-lsb-core
+
+# Response file
+db2_response_file: "/tmp/db2_response.rsp"

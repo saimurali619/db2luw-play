@@ -1,0 +1,43 @@
+---
+- name: Install DB2 prerequisite packages
+  ansible.builtin.dnf:
+    name: "{{ db2_packages }}"
+    state: present
+
+- name: Create DB2 groups
+  ansible.builtin.group:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ db2_instances | map(attribute='group_name') | list | unique }}"
+
+- name: Create DB2 fenced groups
+  ansible.builtin.group:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ db2_instances | map(attribute='fenced_group_name') | list | unique }}"
+
+- name: Create DB2 users
+  ansible.builtin.user:
+    name: "{{ item.instance_name }}"
+    group: "{{ item.group_name }}"
+    password: "{{ item.password | password_hash('sha512') }}"
+    shell: /bin/bash
+    create_home: yes
+  loop: "{{ db2_instances }}"
+
+- name: Create fenced users
+  ansible.builtin.user:
+    name: "{{ item.fenced_name }}"
+    group: "{{ item.fenced_group_name }}"
+    password: "{{ item.password | password_hash('sha512') }}"
+    shell: /bin/bash
+  loop: "{{ db2_instances }}"
+
+- name: Display Prerequisites Result
+  debug:
+    msg:
+      - "======================================"
+      - "   Prerequisites Setup Completed"
+      - "======================================"
+      - "Packages and Users/Groups created successfully"
+      - "======================================"

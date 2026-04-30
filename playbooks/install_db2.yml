@@ -1,0 +1,14 @@
+---
+- name: Install IBM DB2 11.5.9 on RHEL 8
+  hosts: localhost
+  remote_user: mchava
+  become: yes
+  become_method: sudo
+  gather_facts: yes
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  roles:
+    - role: ../
+      name: db2luw_install

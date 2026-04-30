@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  author: Murali Chava
+  description: Installs and configures IBM DB2 LUW 11.5.9 on RHEL 8
+  company: MC
+  license: MIT
+  min_ansible_version: "2.12"
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+  galaxy_tags:
+    - database
+    - db2
+    - ibm
+    - luw

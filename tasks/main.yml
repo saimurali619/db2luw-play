@@ -1,0 +1,12 @@
+---
+- name: Include prerequisite tasks
+  ansible.builtin.include_tasks: prerequisites.yml
+
+- name: Include installation tasks
+  ansible.builtin.include_tasks: install.yml
+
+- name: Include instance creation tasks
+  ansible.builtin.include_tasks: instance.yml
+
+- name: Include validation tasks
+  ansible.builtin.include_tasks: validation.yml

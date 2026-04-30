@@ -1,0 +1,35 @@
+---
+- name: Run db2val validation
+  ansible.builtin.command:
+    cmd: "{{ db2_install_dir }}/bin/db2val -o"
+  register: db2val_output
+  changed_when: false
+  failed_when: false
+  ignore_errors: yes
+
+- name: Save full validation output to log
+  ansible.builtin.copy:
+    content: "{{ db2val_output.stdout | default('No output') }}"
+    dest: "/tmp/db2_validation.log"
+  when: db2val_output.stdout is defined
+
+- name: Extract important validation messages
+  set_fact:
+    validation_summary: "{{ db2val_output.stdout_lines | select('search', 'DBI1335I|DBI1343I|DBI1379I') | list }}"
+
+- name: Display DB2 Validation Report
+  debug:
+    msg:
+      - "================================================================"
+      - "             DB2 LUW Installation Validation Report"
+      - "================================================================"
+      - "DB2 Path          : {{ db2_install_dir }}"
+      - "Instance          : {{ db2_instances[0].instance_name | default('db2inst1') }}"
+      - "Timestamp         : {{ ansible_date_time.iso8601 }}"
+      - ""
+      - "Validation Summary:"
+      - "{{ validation_summary | default(['No key messages found']) }}"
+      - ""
+      - "Status            : {{ 'SUCCESS' if 'DBI1343I' in db2val_output.stdout else 'CHECK MANUALLY' }}"
+      - "Log File          : /tmp/db2_validation.log"
+      - "================================================================"

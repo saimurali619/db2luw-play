@@ -1,0 +1,49 @@
+---
+- name: Clean any old extraction
+  ansible.builtin.file:
+    path: "/tmp/server_dec"
+    state: absent
+
+- name: Copy DB2 installer to /tmp
+  ansible.builtin.copy:
+    src: "{{ db2_installer_filename }}"
+    dest: "/tmp/{{ db2_installer_filename }}"
+    mode: '0644'
+
+- name: Extract DB2 installer
+  ansible.builtin.unarchive:
+    src: "/tmp/{{ db2_installer_filename }}"
+    dest: "/tmp"
+    remote_src: yes
+    creates: "/tmp/server_dec"
+
+- name: Create response file from template
+  ansible.builtin.template:
+    src: db2_response_file.rsp.j2
+    dest: "{{ db2_response_file }}"
+    mode: '0644'
+
+- name: Run DB2 silent installation
+  ansible.builtin.command:
+    cmd: "/tmp/server_dec/db2setup -r {{ db2_response_file }} -l /tmp/db2_install.log"
+  register: db2setup_result
+  changed_when: true
+  args:
+    creates: "{{ db2_install_dir }}/db2profile"
+
+- name: Extract important installation messages
+  set_fact:
+    install_summary: "{{ db2setup_result.stdout_lines | default([]) | select('search', 'DBI|success|completed|error') | list }}"
+
+- name: Display DB2 Silent Installation Result
+  debug:
+    msg:
+      - "======================================"
+      - "   DB2 Silent Installation Result"
+      - "======================================"
+      - "Status     : {{ 'SUCCESS' if db2setup_result.rc == 0 else 'CHECK LOG' }}"
+      - "Log File   : /tmp/db2_install.log"
+      - ""
+      - "Key Messages:"
+      - "{{ install_summary | default(['No summary messages found']) }}"
+      - "======================================"

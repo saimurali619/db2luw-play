@@ -1,0 +1,22 @@
+# General
+*.retry
+*.log
+/tmp/*
+/files/*.tar.gz
+/files/*.zip
+
+# Sensitive files
+*.vault
+vault.yml
+group_vars/vault.yml
+
+# Temporary files
+__pycache__/
+*.pyc
+.DS_Store
+.vscode/
+.idea/
+
+# DB2 installer (don't commit large binaries)
+db2_*.tar.gz
+*.rsp
