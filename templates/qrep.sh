@@ -1,19 +1,18 @@
 #!/bin/bash
-# Q Replication Config Dumper - FIXED PARSING with while read loop
-# No mapfile to avoid syntax errors
+# Q Replication Config Dumper - Dynamic discovery from metadata tables
+# Connects to local databases and finds all schemas and server/schema pairs
 
 echo === Q Replication Configurations across ALL local databases ===
 echo Current running ASN processes for reference:
 ps -ef | grep -E 'asnqcap|asnqapp' | grep -v grep
-echo Running ASN processes count: $(ps -ef | grep -E 'asnqcap|asnqapp' | grep -v grep | wc -l)
 echo 
 
-# Source DB2 profile
+# Source profile
 if [ -f ~/sqllib/db2profile ]; then
   . ~/sqllib/db2profile
 fi
 
-# Get local databases
+# Local databases only
 DBS=$(db2 list db directory | grep Indirect -B4 | grep name | awk '{print $NF}' | sort -u)
 
 if [ -z "$DBS" ]; then
@@ -34,8 +33,6 @@ for DB in $DBS; do
     continue
   fi
 
-  echo   Connected successfully to $DB
-
   TMP_SCHEMAS=/tmp/qrep_schemas_$$.txt
   db2 -x "SELECT DISTINCT TABSCHEMA 
           FROM SYSCAT.TABLES 
@@ -43,13 +40,13 @@ for DB in $DBS; do
           AND TABSCHEMA NOT LIKE 'SYS%' 
           ORDER BY TABSCHEMA" > "$TMP_SCHEMAS" 2>&1
 
-  echo DEBUG: Raw catalog query output:
+  echo DEBUG Raw catalog query for $DB:
   cat "$TMP_SCHEMAS"
   echo 
 
-  # Robust parsing with while read loop
+  # Robust parsing
   SCHEMAS=()
-  while IFS= read -r line; do
+  while IFS= read -r line || [ -n "$line" ]; do
     if [[ $line =~ ^[A-Z][A-Z0-9_]+$ ]]; then
       SCHEMAS+=("$line")
     fi
@@ -96,5 +93,8 @@ done
 echo 
 echo === Summary ===
 echo All capture_server/capture_schema/apply_server/apply_schema pairs from metadata tables are listed above.
-echo Use these exact values to start asnqcap / asnqapp.
 echo === Done ===
+
+Save as qrep.sh, chmod +x qrep.sh, ./qrep.sh
+
+This is dynamic, uses while read for parsing, and keeps connection per database. Run it - the DEBUG will show the schemas and it will dump the pairs.
