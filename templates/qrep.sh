@@ -7,37 +7,32 @@ echo ""
 
 DB2PROFILE=~/sqllib/db2profile
 
-# Function: run query with fresh environment + connect/disconnect
+# Ensure DB2 profile exists
+if [ ! -f "$DB2PROFILE" ]; then
+  echo "ERROR: db2profile not found at $DB2PROFILE"
+  exit 1
+fi
+
+# Function: run SQL safely (connect + query + disconnect in ONE call)
 run_db2_query() {
   DBNAME="$1"
   SQL="$2"
 
-  # Ensure DB2 environment is loaded EVERY time
-  if [ -f "$DB2PROFILE" ]; then
-    . "$DB2PROFILE"
-  else
-    echo "  ❌ db2profile not found at $DB2PROFILE"
+  . "$DB2PROFILE"
+
+  OUTPUT=$(db2 -x "connect to $DBNAME; $SQL; connect reset;" 2>&1)
+
+  # If any SQL error occurs, ignore output
+  if echo "$OUTPUT" | grep -q "^SQL[0-9]"; then
     return 1
   fi
 
-  db2 connect to "$DBNAME" > /dev/null 2>&1
-  if [ $? -ne 0 ]; then
-    echo "  ❌ Connection failed for $DBNAME"
-    return 1
-  fi
-
-  RESULT=$(db2 -x "$SQL" 2>/dev/null)
-
-  db2 connect reset > /dev/null 2>&1
-
-  echo "$RESULT"
+  # Clean output (remove blanks + trim spaces)
+  echo "$OUTPUT" | sed '/^$/d' | sed 's/^[ \t]*//;s/[ \t]*$//'
 }
 
-# Get local databases (same logic you trust)
-if [ -f "$DB2PROFILE" ]; then
-  . "$DB2PROFILE"
-fi
-
+# Get DB list (your original working logic)
+. "$DB2PROFILE"
 DBS=$(db2 list db directory | grep Indirect -B4 | grep name | awk '{print $NF}' | sort -u)
 
 if [ -z "$DBS" ]; then
@@ -52,7 +47,7 @@ for DB in $DBS; do
   echo "--------------------------------------------------"
   echo "DATABASE: $DB"
 
-  # Get schemas
+  # Get schemas safely
   SCHEMAS=$(run_db2_query "$DB" "
     SELECT DISTINCT TABSCHEMA
     FROM SYSCAT.TABLES
@@ -65,7 +60,14 @@ for DB in $DBS; do
     continue
   fi
 
-  for SCHEMA in $SCHEMAS; do
+  echo "$SCHEMAS" | while IFS= read -r SCHEMA; do
+    [ -z "$SCHEMA" ] && continue
+
+    # Validate schema name (skip garbage like SQL1024N)
+    if [[ ! "$SCHEMA" =~ ^[A-Z0-9_]+$ ]]; then
+      continue
+    fi
+
     echo "  Q Rep schema: $SCHEMA"
 
     # SENDQUEUES check
@@ -99,7 +101,9 @@ for DB in $DBS; do
         FROM $SCHEMA.IBMQREP_RECVQUEUES
       "
     fi
+
   done
+
 done
 
 echo ""
