@@ -39,43 +39,21 @@ for DB in $DBS; do
     # APPLY
     . "$DB2PROFILE"
     db2 connect to "$DB" > /dev/null 2>&1
-    APPLY_COUNT=$(db2 -x "
-      SELECT COUNT(*)
-      FROM SYSCAT.TABLES
-      WHERE TABSCHEMA='$SCHEMA'
-        AND TABNAME='IBMQREP_SENDQUEUES'
-    " | tr -d '[:space:]')
+    echo " → APPLY config from SENDQUEUES:"
+    db2 -x "
+      SELECT DISTINCT APPLY_SERVER, APPLY_SCHEMA
+      FROM $SCHEMA.IBMQREP_SENDQUEUES
+    " 2>/dev/null || echo "   (query failed or no data)"
     db2 connect reset > /dev/null 2>&1
-    if [ "$APPLY_COUNT" = "1" ]; then
-      echo " → APPLY config:"
-      . "$DB2PROFILE"
-      db2 connect to "$DB" > /dev/null 2>&1
-      db2 -x "
-        SELECT DISTINCT APPLY_SERVER, APPLY_SCHEMA
-        FROM $SCHEMA.IBMQREP_SENDQUEUES
-      "
-      db2 connect reset > /dev/null 2>&1
-    fi
     # CAPTURE
     . "$DB2PROFILE"
     db2 connect to "$DB" > /dev/null 2>&1
-    CAPTURE_COUNT=$(db2 -x "
-      SELECT COUNT(*)
-      FROM SYSCAT.TABLES
-      WHERE TABSCHEMA='$SCHEMA'
-        AND TABNAME='IBMQREP_RECVQUEUES'
-    " | tr -d '[:space:]')
+    echo " → CAPTURE config from RECVQUEUES:"
+    db2 -x "
+      SELECT DISTINCT CAPTURE_SERVER, CAPTURE_SCHEMA
+      FROM $SCHEMA.IBMQREP_RECVQUEUES
+    " 2>/dev/null || echo "   (query failed or no data)"
     db2 connect reset > /dev/null 2>&1
-    if [ "$CAPTURE_COUNT" = "1" ]; then
-      echo " → CAPTURE config:"
-      . "$DB2PROFILE"
-      db2 connect to "$DB" > /dev/null 2>&1
-      db2 -x "
-        SELECT DISTINCT CAPTURE_SERVER, CAPTURE_SCHEMA
-        FROM $SCHEMA.IBMQREP_RECVQUEUES
-      "
-      db2 connect reset > /dev/null 2>&1
-    fi
   done
 done
 echo ""
