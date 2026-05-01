@@ -1,6 +1,6 @@
 #!/bin/bash
-# Q Replication Config Dumper - FIXED PARSING VERSION
-# Now correctly handles multiple schemas (QRGWNOGB and QRNETGWD_SITF)
+# Q Replication Config Dumper - FIXED PARSING with while read loop
+# No mapfile to avoid syntax errors
 
 echo === Q Replication Configurations across ALL local databases ===
 echo Current running ASN processes for reference:
@@ -47,8 +47,13 @@ for DB in $DBS; do
   cat "$TMP_SCHEMAS"
   echo 
 
-  # Proper parsing with array to handle multiple schemas correctly
-  mapfile -t SCHEMAS < <(grep -E '^[A-Z][A-Z0-9_]+$' "$TMP_SCHEMAS" | sort -u)
+  # Robust parsing with while read loop
+  SCHEMAS=()
+  while IFS= read -r line; do
+    if [[ $line =~ ^[A-Z][A-Z0-9_]+$ ]]; then
+      SCHEMAS+=("$line")
+    fi
+  done < "$TMP_SCHEMAS"
 
   if [ ${#SCHEMAS[@]} -eq 0 ]; then
     echo   No Q Replication control tables found in this database.
