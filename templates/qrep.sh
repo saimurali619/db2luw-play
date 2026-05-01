@@ -1,19 +1,19 @@
 #!/bin/bash
-# Full working Q Rep Config Dumper - uses temp files to avoid connection loss
-# Discovers from metadata tables in local databases
+# Q Replication Config Dumper - DEBUG version with full raw output
+# This will show exactly why tables are not being detected
 
 echo === Q Replication Configurations across ALL local databases ===
 echo Current running ASN processes for reference:
 ps -ef | grep -E 'asnqcap|asnqapp' | grep -v grep
-echo Running ASN processes count: $(ps -ef | grep -E 'asnqcap|asnqapp' | grep -v grep | wc -l)
 echo 
 
 # Source DB2 profile
 if [ -f ~/sqllib/db2profile ]; then
   . ~/sqllib/db2profile
+  echo DB2 profile sourced successfully
 fi
 
-# Get local databases
+# Get only local (Indirect) databases
 DBS=$(db2 list db directory | grep Indirect -B4 | grep name | awk '{print $NF}' | sort -u)
 
 if [ -z "$DBS" ]; then
@@ -28,22 +28,30 @@ for DB in $DBS; do
   echo --------------------------------------------------
   echo DATABASE: $DB
   
+  # Connect
   db2 connect to "$DB" > /dev/null 2>&1
   if [ $? -ne 0 ]; then
     echo   Failed to connect to $DB
     continue
   fi
 
-  echo   Checking Q Rep control tables...
+  echo   Connected successfully to $DB
 
+  # Raw catalog query with full visible output
   TMP_SCHEMAS=/tmp/qrep_schemas_$$.txt
+  echo DEBUG: Running catalog query now...
   db2 -x "SELECT DISTINCT TABSCHEMA 
           FROM SYSCAT.TABLES 
           WHERE TABNAME IN ('IBMQREP_SENDQUEUES', 'IBMQREP_RECVQUEUES') 
           AND TABSCHEMA NOT LIKE 'SYS%' 
           ORDER BY TABSCHEMA" > "$TMP_SCHEMAS" 2>&1
 
-  SCHEMAS=$(grep -E '^[A-Z][A-Z0-9_]+$' "$TMP_SCHEMAS" | sort -u || echo "")
+  echo DEBUG: Raw output from catalog query:
+  cat "$TMP_SCHEMAS"
+  echo 
+
+  # Parse schemas (very tolerant)
+  SCHEMAS=$(cat "$TMP_SCHEMAS" | grep -E '^[A-Z0-9_]+' | tr -d '[:space:]' | sort -u || echo "")
 
   if [ -z "$SCHEMAS" ]; then
     echo   No Q Replication control tables found in this database.
@@ -51,6 +59,8 @@ for DB in $DBS; do
     db2 terminate > /dev/null 2>&1
     continue
   fi
+
+  echo   Found Q Rep schemas: $SCHEMAS
 
   for SCHEMA in $SCHEMAS; do
     echo   Q Rep schema: $SCHEMA
@@ -83,7 +93,6 @@ done
 
 echo 
 echo === Summary ===
-echo All capture_server/capture_schema/apply_server/apply_schema pairs from metadata tables are listed above.
-echo Use them to start asnqcap / asnqapp even if processes are down.
+echo Look at the DEBUG lines above - they show the exact output of the catalog query.
+echo If you see QRGWNOGB and QRNETGWD_SITF in the DEBUG section then the script works.
 echo === Done ===
-
