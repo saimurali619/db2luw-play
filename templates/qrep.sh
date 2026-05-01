@@ -5,9 +5,37 @@ echo "Current running ASN processes (for reference):"
 ps -ef | grep -E 'asnqcap|asnqapp' | grep -v grep
 echo ""
 
-# Load DB2 profile (IMPORTANT in scripts)
-if [ -f ~/sqllib/db2profile ]; then
-  . ~/sqllib/db2profile
+DB2PROFILE=~/sqllib/db2profile
+
+# Function: run query with fresh environment + connect/disconnect
+run_db2_query() {
+  DBNAME="$1"
+  SQL="$2"
+
+  # Ensure DB2 environment is loaded EVERY time
+  if [ -f "$DB2PROFILE" ]; then
+    . "$DB2PROFILE"
+  else
+    echo "  ❌ db2profile not found at $DB2PROFILE"
+    return 1
+  fi
+
+  db2 connect to "$DBNAME" > /dev/null 2>&1
+  if [ $? -ne 0 ]; then
+    echo "  ❌ Connection failed for $DBNAME"
+    return 1
+  fi
+
+  RESULT=$(db2 -x "$SQL" 2>/dev/null)
+
+  db2 connect reset > /dev/null 2>&1
+
+  echo "$RESULT"
+}
+
+# Get local databases (same logic you trust)
+if [ -f "$DB2PROFILE" ]; then
+  . "$DB2PROFILE"
 fi
 
 DBS=$(db2 list db directory | grep Indirect -B4 | grep name | awk '{print $NF}' | sort -u)
@@ -24,48 +52,54 @@ for DB in $DBS; do
   echo "--------------------------------------------------"
   echo "DATABASE: $DB"
 
-  db2 -x <<EOF
+  # Get schemas
+  SCHEMAS=$(run_db2_query "$DB" "
+    SELECT DISTINCT TABSCHEMA
+    FROM SYSCAT.TABLES
+    WHERE TABNAME IN ('IBMQREP_SENDQUEUES', 'IBMQREP_RECVQUEUES')
+    ORDER BY TABSCHEMA
+  ")
 
-CONNECT TO $DB;
+  if [ -z "$SCHEMAS" ]; then
+    echo "  No Q Replication control tables found."
+    continue
+  fi
 
--- Get schemas
-WITH SCHEMAS AS (
-  SELECT DISTINCT TABSCHEMA
-  FROM SYSCAT.TABLES
-  WHERE TABNAME IN ('IBMQREP_SENDQUEUES', 'IBMQREP_RECVQUEUES')
-)
-SELECT 'SCHEMA:' || TABSCHEMA FROM SCHEMAS;
+  for SCHEMA in $SCHEMAS; do
+    echo "  Q Rep schema: $SCHEMA"
 
--- APPLY (SENDQUEUES)
-SELECT 'APPLY:' || APPLY_SERVER || ',' || APPLY_SCHEMA
-FROM (
-  SELECT DISTINCT APPLY_SERVER, APPLY_SCHEMA
-  FROM SYSCAT.TABLES T, $DB.SYSCAT.TABLES S
-  WHERE T.TABNAME='IBMQREP_SENDQUEUES'
-  FETCH FIRST 1 ROW ONLY
-) AS DUMMY
-WHERE EXISTS (
-  SELECT 1 FROM SYSCAT.TABLES 
-  WHERE TABNAME='IBMQREP_SENDQUEUES'
-);
+    # SENDQUEUES check
+    SEND_COUNT=$(run_db2_query "$DB" "
+      SELECT COUNT(*)
+      FROM SYSCAT.TABLES
+      WHERE TABSCHEMA='$SCHEMA'
+        AND TABNAME='IBMQREP_SENDQUEUES'
+    " | tr -d '[:space:]')
 
--- CAPTURE (RECVQUEUES)
-SELECT 'CAPTURE:' || CAPTURE_SERVER || ',' || CAPTURE_SCHEMA
-FROM (
-  SELECT DISTINCT CAPTURE_SERVER, CAPTURE_SCHEMA
-  FROM SYSCAT.TABLES T, $DB.SYSCAT.TABLES S
-  WHERE T.TABNAME='IBMQREP_RECVQUEUES'
-  FETCH FIRST 1 ROW ONLY
-) AS DUMMY
-WHERE EXISTS (
-  SELECT 1 FROM SYSCAT.TABLES 
-  WHERE TABNAME='IBMQREP_RECVQUEUES'
-);
+    if [ "$SEND_COUNT" = "1" ]; then
+      echo "    → APPLY config (IBMQREP_SENDQUEUES):"
+      run_db2_query "$DB" "
+        SELECT DISTINCT APPLY_SERVER, APPLY_SCHEMA
+        FROM $SCHEMA.IBMQREP_SENDQUEUES
+      "
+    fi
 
-CONNECT RESET;
+    # RECVQUEUES check
+    RECV_COUNT=$(run_db2_query "$DB" "
+      SELECT COUNT(*)
+      FROM SYSCAT.TABLES
+      WHERE TABSCHEMA='$SCHEMA'
+        AND TABNAME='IBMQREP_RECVQUEUES'
+    " | tr -d '[:space:]')
 
-EOF
-
+    if [ "$RECV_COUNT" = "1" ]; then
+      echo "    → CAPTURE config (IBMQREP_RECVQUEUES):"
+      run_db2_query "$DB" "
+        SELECT DISTINCT CAPTURE_SERVER, CAPTURE_SCHEMA
+        FROM $SCHEMA.IBMQREP_RECVQUEUES
+      "
+    fi
+  done
 done
 
 echo ""
