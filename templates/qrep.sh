@@ -1,5 +1,7 @@
 #!/bin/bash
 echo "=== Q Replication Configurations across ALL databases in this instance ==="
+echo "Current running ASN processes:"
+ps -ef | grep -E 'asnqcap|asnqapp' | grep -v grep
 echo ""
 DB2PROFILE=~/sqllib/db2profile
 if [ ! -f "$DB2PROFILE" ]; then
@@ -43,7 +45,7 @@ for DB in $DBS; do
     db2 -x "
       SELECT DISTINCT APPLY_SERVER, APPLY_SCHEMA
       FROM $SCHEMA.IBMQREP_SENDQUEUES
-    " 2>/dev/null || echo "   (query failed or no data)"
+    " 2>/dev/null || echo "   (no data or table not in this schema)"
     db2 connect reset > /dev/null 2>&1
     # CAPTURE
     . "$DB2PROFILE"
@@ -52,7 +54,7 @@ for DB in $DBS; do
     db2 -x "
       SELECT DISTINCT CAPTURE_SERVER, CAPTURE_SCHEMA
       FROM $SCHEMA.IBMQREP_RECVQUEUES
-    " 2>/dev/null || echo "   (query failed or no data)"
+    " 2>/dev/null || echo "   (no data or table not in this schema)"
     db2 connect reset > /dev/null 2>&1
   done
 done
