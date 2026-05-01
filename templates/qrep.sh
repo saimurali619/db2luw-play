@@ -1,8 +1,7 @@
 #!/bin/bash
-# Q Replication Config Dumper
-# Loops over ALL local (Indirect) databases in this DB2 instance
-# and dumps every capture/apply server + schema configuration
-# Also compares with running ASN processes
+# Q Replication Config Dumper - Fixed version
+# Loops over ALL local (Indirect) databases
+# Better error handling and output cleaning
 
 echo === Q Replication Configurations across ALL databases in this instance ===
 echo Current running ASN processes for reference:
@@ -32,11 +31,19 @@ for DB in $DBS; do
     continue
   fi
 
-  # Find every schema that contains Q Rep control tables
+  # Quick connection test
+  if ! db2 -x "VALUES 1" > /dev/null 2>&1; then
+    echo   Connection test failed for $DB
+    db2 terminate > /dev/null 2>&1
+    continue
+  fi
+
+  # Find every schema that contains Q Rep control tables - cleaned output
   SCHEMAS=$(db2 -x "SELECT DISTINCT TABSCHEMA 
                     FROM SYSCAT.TABLES 
                     WHERE TABNAME IN ('IBMQREP_SENDQUEUES', 'IBMQREP_RECVQUEUES') 
-                    ORDER BY TABSCHEMA" 2>/dev/null || echo "")
+                    AND TABSCHEMA NOT LIKE 'SYS%' 
+                    ORDER BY TABSCHEMA" 2>/dev/null | grep -E '^[A-Z0-9_]+$' | sort -u || echo "")
 
   if [ -z "$SCHEMAS" ]; then
     echo   No Q Replication control tables found.
@@ -52,7 +59,7 @@ for DB in $DBS; do
                    WHERE TABSCHEMA='$SCHEMA' AND TABNAME='IBMQREP_SENDQUEUES'" 2>/dev/null | tr -d '[:space:]') -eq 1 ]; then
       echo     APPLY config IBMQREP_SENDQUEUES:
       db2 -x "SELECT DISTINCT APPLY_SERVER, APPLY_SCHEMA 
-              FROM $SCHEMA.IBMQREP_SENDQUEUES;"
+              FROM $SCHEMA.IBMQREP_SENDQUEUES;" 2>/dev/null
     fi
 
     # RECVQUEUES = Capture-side configuration
@@ -60,7 +67,7 @@ for DB in $DBS; do
                    WHERE TABSCHEMA='$SCHEMA' AND TABNAME='IBMQREP_RECVQUEUES'" 2>/dev/null | tr -d '[:space:]') -eq 1 ]; then
       echo     CAPTURE config IBMQREP_RECVQUEUES:
       db2 -x "SELECT DISTINCT CAPTURE_SERVER, CAPTURE_SCHEMA 
-              FROM $SCHEMA.IBMQREP_RECVQUEUES;"
+              FROM $SCHEMA.IBMQREP_RECVQUEUES;" 2>/dev/null
     fi
   done
 
