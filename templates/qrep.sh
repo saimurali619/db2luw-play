@@ -1,6 +1,8 @@
 #!/bin/bash
 
 echo "=== Q Replication Configurations across ALL databases in this instance ==="
+echo "Current running ASN processes (for reference):"
+ps -ef | grep -E 'asnqcap|asnqapp' | grep -v grep
 echo ""
 
 DB2PROFILE=~/sqllib/db2profile
@@ -10,17 +12,26 @@ if [ ! -f "$DB2PROFILE" ]; then
   exit 1
 fi
 
+# Function: connect → query → disconnect (clean and safe)
 run_db2_query() {
   DBNAME="$1"
   SQL="$2"
 
   . "$DB2PROFILE"
 
-  OUTPUT=$(db2 -x "connect to $DBNAME; $SQL; connect reset;" 2>&1)
+  db2 connect to "$DBNAME" > /dev/null 2>&1
+  if [ $? -ne 0 ]; then
+    echo "  ❌ Failed to connect to $DBNAME"
+    return 1
+  fi
+
+  OUTPUT=$(db2 -x "$SQL" 2>&1)
   RC=$?
 
+  db2 connect reset > /dev/null 2>&1
+
   if [ $RC -ne 0 ]; then
-    echo "  ❌ DB2 ERROR on $DBNAME:"
+    echo "  ❌ DB2 error:"
     echo "$OUTPUT"
     return 1
   fi
@@ -29,18 +40,25 @@ run_db2_query() {
   echo "$OUTPUT" | sed '/^$/d' | sed 's/^[ \t]*//;s/[ \t]*$//'
 }
 
+# Load profile for DB list
 . "$DB2PROFILE"
+
 DBS=$(db2 list db directory | grep Indirect -B4 | grep name | awk '{print $NF}' | sort -u)
 
-echo "Found DBs: $DBS"
+if [ -z "$DBS" ]; then
+  echo "ERROR: No local databases found in DB directory."
+  exit 1
+fi
+
+echo "Found local databases: $DBS"
 echo ""
 
 for DB in $DBS; do
   echo "--------------------------------------------------"
   echo "DATABASE: $DB"
 
-  # DEBUG: show actual tables
-  echo "  DEBUG: Checking for Q Rep tables..."
+  # DEBUG: confirm tables exist
+  echo "  DEBUG: Q Rep tables in this DB:"
   run_db2_query "$DB" "
     SELECT TABSCHEMA, TABNAME
     FROM SYSCAT.TABLES
@@ -59,16 +77,20 @@ for DB in $DBS; do
     continue
   fi
 
-  echo "$SCHEMAS" | while read SCHEMA; do
+  echo "$SCHEMAS" | while IFS= read -r SCHEMA; do
     [ -z "$SCHEMA" ] && continue
 
     echo "  Q Rep schema: $SCHEMA"
 
+    # APPLY
+    echo "    → APPLY config:"
     run_db2_query "$DB" "
       SELECT DISTINCT APPLY_SERVER, APPLY_SCHEMA
       FROM $SCHEMA.IBMQREP_SENDQUEUES
     "
 
+    # CAPTURE
+    echo "    → CAPTURE config:"
     run_db2_query "$DB" "
       SELECT DISTINCT CAPTURE_SERVER, CAPTURE_SCHEMA
       FROM $SCHEMA.IBMQREP_RECVQUEUES
