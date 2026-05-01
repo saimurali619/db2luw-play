@@ -45,7 +45,7 @@ for DB in $DBS; do
     db2 -x "
       SELECT DISTINCT APPLY_SERVER, APPLY_SCHEMA
       FROM $SCHEMA.IBMQREP_SENDQUEUES
-    " 2>/dev/null || echo "   (no data or table not in this schema)"
+    " 2>/dev/null || echo "   (table does not exist in this schema)"
     db2 connect reset > /dev/null 2>&1
     # CAPTURE
     . "$DB2PROFILE"
@@ -54,7 +54,7 @@ for DB in $DBS; do
     db2 -x "
       SELECT DISTINCT CAPTURE_SERVER, CAPTURE_SCHEMA
       FROM $SCHEMA.IBMQREP_RECVQUEUES
-    " 2>/dev/null || echo "   (no data or table not in this schema)"
+    " 2>/dev/null || echo "   (table does not exist in this schema)"
     db2 connect reset > /dev/null 2>&1
   done
 done
