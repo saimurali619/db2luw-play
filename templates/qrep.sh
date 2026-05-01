@@ -1,7 +1,7 @@
+```bash
 #!/bin/bash
-# Q Replication Config Dumper - Fixed version
-# Loops over ALL local (Indirect) databases
-# Better error handling and output cleaning
+# Q Replication Config Dumper - Fixed with debug to see why no tables are found
+# Loops over ALL local databases and shows exactly what the catalog query returns
 
 echo === Q Replication Configurations across ALL databases in this instance ===
 echo Current running ASN processes for reference:
@@ -38,15 +38,24 @@ for DB in $DBS; do
     continue
   fi
 
-  # Find every schema that contains Q Rep control tables - cleaned output
-  SCHEMAS=$(db2 -x "SELECT DISTINCT TABSCHEMA 
-                    FROM SYSCAT.TABLES 
-                    WHERE TABNAME IN ('IBMQREP_SENDQUEUES', 'IBMQREP_RECVQUEUES') 
-                    AND TABSCHEMA NOT LIKE 'SYS%' 
-                    ORDER BY TABSCHEMA" 2>/dev/null | grep -E '^[A-Z0-9_]+$' | sort -u || echo "")
+  echo DEBUG: Checking Q Rep control tables in database $DB
+
+  # Raw query output so we can see exactly what is happening
+  RAW=$(db2 -x "SELECT DISTINCT TABSCHEMA 
+                FROM SYSCAT.TABLES 
+                WHERE TABNAME IN ('IBMQREP_SENDQUEUES', 'IBMQREP_RECVQUEUES') 
+                AND TABSCHEMA NOT LIKE 'SYS%' 
+                ORDER BY TABSCHEMA" 2>&1)
+
+  echo DEBUG Raw schema query output for $DB:
+  echo "$RAW"
+  echo 
+
+  # Clean schemas from raw output
+  SCHEMAS=$(echo "$RAW" | grep -E '^[A-Z][A-Z0-9_]+$' | sort -u || echo "")
 
   if [ -z "$SCHEMAS" ]; then
-    echo   No Q Replication control tables found.
+    echo   No Q Replication control tables found in this database.
     db2 terminate > /dev/null 2>&1
     continue
   fi
@@ -55,16 +64,18 @@ for DB in $DBS; do
     echo   Q Rep schema: $SCHEMA
 
     # SENDQUEUES = Apply-side configuration
-    if [ $(db2 -x "SELECT COUNT(*) FROM SYSCAT.TABLES 
-                   WHERE TABSCHEMA='$SCHEMA' AND TABNAME='IBMQREP_SENDQUEUES'" 2>/dev/null | tr -d '[:space:]') -eq 1 ]; then
+    SEND_COUNT=$(db2 -x "SELECT COUNT(*) FROM SYSCAT.TABLES 
+                   WHERE TABSCHEMA='$SCHEMA' AND TABNAME='IBMQREP_SENDQUEUES'" 2>/dev/null | tr -d '[:space:]')
+    if echo "$SEND_COUNT" | grep -q '^1$'; then
       echo     APPLY config IBMQREP_SENDQUEUES:
       db2 -x "SELECT DISTINCT APPLY_SERVER, APPLY_SCHEMA 
               FROM $SCHEMA.IBMQREP_SENDQUEUES;" 2>/dev/null
     fi
 
     # RECVQUEUES = Capture-side configuration
-    if [ $(db2 -x "SELECT COUNT(*) FROM SYSCAT.TABLES 
-                   WHERE TABSCHEMA='$SCHEMA' AND TABNAME='IBMQREP_RECVQUEUES'" 2>/dev/null | tr -d '[:space:]') -eq 1 ]; then
+    RECV_COUNT=$(db2 -x "SELECT COUNT(*) FROM SYSCAT.TABLES 
+                   WHERE TABSCHEMA='$SCHEMA' AND TABNAME='IBMQREP_RECVQUEUES'" 2>/dev/null | tr -d '[:space:]')
+    if echo "$RECV_COUNT" | grep -q '^1$'; then
       echo     CAPTURE config IBMQREP_RECVQUEUES:
       db2 -x "SELECT DISTINCT CAPTURE_SERVER, CAPTURE_SCHEMA 
               FROM $SCHEMA.IBMQREP_RECVQUEUES;" 2>/dev/null
@@ -78,6 +89,6 @@ echo
 echo === Summary ===
 echo ASN processes running: $(ps -ef | grep -E 'asnqcap|asnqapp' | grep -v grep | wc -l)
 echo Review the dumped DB configs above against the running processes printed at the top.
-echo Any server/schema pair in the ps output that does not appear in the DB dump is missing from the control tables gathered here 
-echo typically because it lives in a database that was not accessible or has different control schemas.
+echo Look at the DEBUG lines to see why tables were not found.
 echo === Done. All Q Rep configs dumped. ===
+```
